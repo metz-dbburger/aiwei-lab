@@ -2,19 +2,19 @@
 
 Why does AI writing always sound like *"This isn't just X — it's Y"*?
 
-A single-file lab to test one explanation yourself: **the AI accent is not invented by models, it is selected by rewards.** Humans invented these cheap rhetorical templates; preference annotators systematically favor them (typicality bias); alignment training locks them in (mode collapse); distillation echoes them into the next generation.
+A single-file lab to test one explanation yourself: **part of the AI accent may be existing rhetoric further amplified by preference training.** Humans invented these cheap rhetorical templates; annotators tend to favor them (typicality bias); alignment may amplify them further; synthetic-data pipelines may pass them on.
 
 Three experiments run with zero dependencies and no API key:
 
 ```bash
-python aiweilab.py demo    # 1. fingerprint scanner: template density, human vs AI corpora
-python aiweilab.py scan your_text.txt
-python aiweilab.py quiz    # 2. be the reward model: 8 blind A/B picks
-python aiweilab.py vs      # 3. verbalized sampling, no-code version
-python aiweilab.py probe   # 4. base vs instruct comparison (needs transformers+torch)
+python3 aiweilab.py demo    # 1. template counter: template density, human vs AI corpora
+python3 aiweilab.py scan your_text.txt
+python3 aiweilab.py quiz    # 2. be the reward model: 8 blind A/B picks
+python3 aiweilab.py vs      # 3. verbalized sampling, no-code version
+python3 aiweilab.py probe   # 4. base vs instruct comparison (needs transformers+torch)
 ```
 
-Measured on bundled corpora: AI "insight-style" text hits **57.85 template matches per 1,000 chars**; carefully human-edited articles score **0–0.53**.
+Demo note: the bundled corpora are deliberately constructed (plain diary text vs. template-stuffed AI text, 57.85 vs ~0 matches per 1,000 chars). They validate the counter itself, not a general human-vs-AI gap — scan your own texts for a meaningful comparison.
 
 Not an AI detector. It compares frequencies; it does not judge authors.
 

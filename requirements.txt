@@ -1,3 +1,4 @@
-# 实验一/二/三：零依赖，Python 3.8+ 自带库即可
-# 实验四（probe）需要以下两项，按需安装：
-#   pip install transformers torch
+# 实验一/二/三：零依赖，Python 3.8+ 自带库即可，无需安装本文件。
+# 以下仅实验四（probe）需要：
+transformers>=4.44
+torch

@@ -2,25 +2,27 @@
 """
 aiwei-lab —— AI味实验室（单文件版）
 
-配套文章《AI味是怎么炼成的》。四个实验，前三个零依赖、不用任何 API key：
+配套文章《为什么AI写东西像高考满分作文》（小红书 · AI演进实验室）。
+四个实验，前三个零依赖、不用任何 API key：
 
-  python aiweilab.py demo    # 实验一：AI味指纹仪（内置语料对比）
-  python aiweilab.py scan 你的文章.txt   # 用指纹仪扫自己的文本
-  python aiweilab.py quiz    # 实验二：你也是奖励模型（8 组盲选）
-  python aiweilab.py vs      # 实验三：口述采样（零代码，任何聊天 AI 可试）
-  python aiweilab.py probe   # 实验四：对齐前后对照（需 pip install transformers torch）
+  python3 aiweilab.py demo    # 实验一：模板计数器（内置语料对比）
+  python3 aiweilab.py scan 你的文章.txt   # 扫自己的文本
+  python3 aiweilab.py quiz    # 实验二：你也是奖励模型（8 组演示句对盲选）
+  python3 aiweilab.py vs      # 实验三：口述采样（零代码，任何聊天 AI 可试）
+  python3 aiweilab.py probe   # 实验四：对齐前后对照（需 pip install transformers torch）
 
-一句话原理：AI味不是模型的发明，是奖励的选择。
-检测器不是测谎仪，请不要拿它去指控任何人类作者。
+一句话主张：一部分AI味，可能是已有表达被偏好训练进一步放大的结果。
+计数器不是测谎仪，请不要拿它去指控任何人类作者。
 """
 
 import argparse
+import json
 import random
 import re
 import sys
 
 # ---------------------------------------------------------------------------
-# 一、AI味指纹：特征词典
+# 一、AI味特征词典（模板计数器的词表）
 # 每条特征 = (编号, 名称, 正则列表)。频率按"每千字命中次数"统计。
 # ---------------------------------------------------------------------------
 
@@ -33,7 +35,7 @@ FEATURES = [
         r"远不止",
     ]),
     ("F2", "惊人-揭示（震惊体）", [
-        r"震惊", r"大跌眼镜", r"颠覆[了你的]{0,3}认知", r"细思极恐",
+        r"震惊", r"大跌眼镜", r"颠覆(了)?(你的)?认知", r"细思极恐",
         r"鲜为人知", r"没有?人(发现|注意|告诉)", r"令人惊讶的是",
         r"答案[^。！？\n]{0,8}出乎", r"一旦[^。！？\n]{1,12}(曝光|说破|揭开)",
         r"却很少有人",
@@ -49,7 +51,7 @@ FEATURES = [
     ("F5", "破折号", [r"——"]),
     ("F6", "万能升华", [
         r"重新定义", r"全新的(方式|视角|高度|可能)", r"深刻地?(改变|影响|重塑)",
-        r"赋能", r"底层逻辑", r"认知升级", r"打开[了一]{0,2}扇?新的?大门",
+        r"赋能", r"底层逻辑", r"认知升级", r"打开(了)?(一)?扇?新的?大门",
     ]),
     ("F7", "delve类英文词", [
         r"\bdelve", r"\btapestry\b", r"\bunderscore", r"\bintricate",
@@ -145,34 +147,35 @@ AI_SAMPLES = """
 
 
 # ---------------------------------------------------------------------------
-# 三、实验二：你也是奖励模型（盲选测验）
-# 每组两句话内容相同，一句平实，一句模板化。看看你会把票投给谁。
+# 三、实验二：你也是奖励模型（盲选体验）
 # ---------------------------------------------------------------------------
 
+# 演示句对：每组保留同一核心事实，B 句叠加常见修辞框架。
+# 若要做成严肃实验，需要多人样本与统计检验；这里是单人体验版。
 QUIZ_PAIRS = [
     ("这个方法能把整理文件的时间省下一半。",
-     "这不仅仅是一个省时间的方法，而是一种全新的工作方式。"),
+     "很少有人知道，这个方法能把整理文件的时间省下一半。"),
     ("猫在窗台上睡了一下午。",
-     "那只猫用一下午告诉我们什么叫专注：它只做一件事，睡觉。"),
+     "猫没有做别的，而是在窗台上睡了一下午。"),
     ("咖啡因挡住了让你困的信号，所以你觉得清醒。",
-     "咖啡因的真相会让很多人大跌眼镜：它从没给过你能量，它只是骗过了你的疲劳。"),
+     "真相可能让你意外：咖啡因挡住了让你困的信号，所以你觉得清醒。"),
     ("每周跑两次步，一个月后爬楼梯不喘了。",
-     "改变我的不是跑步，而是跑步背后那种重新掌控生活的感觉。"),
+     "每周跑两次步，一个月后爬楼梯不喘了，改变就是这样发生的。"),
     ("这本书讲了钱是怎么在银行系统里流动的。",
-     "读完这本书你会发现一个没人告诉过你的事实：你对钱的理解，可能从一开始就是错的。"),
+     "这本书讲的不是别的，正是钱怎么在银行系统里流动。"),
     ("我试了两周番茄钟，下午效率高了一些，晚上没什么变化。",
-     "番茄钟的意义远不止 25 分钟——它重新定义了你和时间的关系。"),
+     "我试了两周番茄钟，结果出乎不少人意料：下午效率高了一些，晚上没什么变化。"),
     ("这条街种了两排梧桐，夏天走着比旁边那条凉快。",
-     "树荫改变的不只是温度，更是一座城市对待行人的态度。"),
+     "没有人注意到，这条街种了两排梧桐，夏天走着比旁边那条凉快。"),
     ("我每天背 20 个词，三个月后能看懂新闻标题了。",
-     "学外语最震撼的一刻是你突然意识到：你获得的不是词汇，而是另一种看世界的方式。"),
+     "说到底，我每天背 20 个词，三个月后能看懂新闻标题了，积累就是这么回事。"),
 ]
 
 
 def cmd_quiz(auto=False):
-    print("\n== 实验二：你也是奖励模型 ==")
-    print("下面 8 组句子，每组两句说的是同一件事。")
-    print("凭直觉选：哪句更想让你读下去、更像'有深度'？（输入 1 或 2）\n")
+    print("\n== 实验二：你也是奖励模型（体验版） ==")
+    print("下面 8 组句对：每组保留同一个核心事实，其中一句叠加了常见修辞框架。")
+    print("凭直觉选：哪句你更愿意继续读下去？（输入 1 或 2）\n")
     rng = random.Random()
     votes_template = 0
     for i, (plain, tpl) in enumerate(QUIZ_PAIRS, 1):
@@ -198,29 +201,32 @@ def cmd_quiz(auto=False):
         print()
     print("=" * 46)
     print(f"结果：你把 {votes_template}/8 票投给了模板句（AI味版本）。\n")
-    print("刚才发生的事，就是一次微型的偏好标注（RLHF 里的那个 HF）。")
-    print("认知心理学早就发现：熟悉的修辞读起来更顺，更顺就显得更对、更深，")
-    print("这叫典型性偏差。奖励模型学的正是千万次这样的选择——")
-    print("模板拿高分，高分被强化，强化出你天天见到的 AI味。")
-    print("如果你大部分选了平实句：恭喜，你是评审席上的少数派；")
-    print("但请记住，奖励模型听的是多数票。")
+    print("刚才这套二选一界面，粗略模拟了 RLHF 偏好标注的工作形态。")
+    print("认知心理学的一个解释叫典型性偏差：熟悉的修辞读起来更顺，")
+    print("更顺就显得更对、更深。真实标注里大量这类选择聚合起来，")
+    print("就可能把这种倾向传给奖励模型。")
+    print("说明两点：①这是单人体验，不是统计实验，别拿一次结果下结论；")
+    print("②如果你大部分选了平实句，也别急着下结论：进入训练的是")
+    print("  许多标注员聚合后的偏好，单个人的口味未必改变整体倾向。")
 
 
 # ---------------------------------------------------------------------------
-# 四、实验一：指纹仪
+# 四、实验一：模板计数器
 # ---------------------------------------------------------------------------
 
 def cmd_demo():
-    print("\n== 实验一：AI味指纹仪（内置语料对比） ==")
+    print("\n== 实验一：模板计数器（内置语料对比） ==")
     print("人类样本：自拟素人文本（日记/流水账/短影评）")
     print("AI 样本：大语言模型生成的'干货体'段落")
     h = count_features(HUMAN_SAMPLES)
     a = count_features(AI_SAMPLES)
     print_compare(h, a, "人类样本", "AI样本")
-    print("\n解读：差距最大的通常是 F1（对比否定）、F2（震惊体）和 F6（万能升华）。")
-    print("提醒：这不是测谎仪。低分不证明是人写的，高分不证明是 AI 写的，")
-    print("它只回答一个问题：这类模板在两种文本里的密度差了多少倍。")
-    print("下一步：python aiweilab.py scan 你自己的文章.txt")
+    print("\n解读：本次演示中差距最大的是 F1（对比否定）、F2（震惊体）和 F3（划重点腔）。")
+    print("重要：内置语料是刻意构造的演示样本（素人文本故意不加修辞，AI 文本")
+    print("刻意堆满模板），它验证的是计数器本身能量出差距，不代表一般 AI 文本")
+    print("与人类文本的普遍差距。想要有意义的对比，扫你自己的真实文本。")
+    print("提醒：这不是测谎仪。低分不证明是人写的，高分不证明是 AI 写的。")
+    print("下一步：python3 aiweilab.py scan 你自己的文章.txt")
 
 
 def cmd_scan(path):
@@ -230,13 +236,14 @@ def cmd_scan(path):
     except OSError as e:
         print(f"读不到文件：{e}")
         sys.exit(1)
-    print(f"\n== 指纹扫描：{path}（{len(text)} 字符） ==")
+    print(f"\n== 模板密度扫描：{path}（{len(text)} 字符） ==")
     r = count_features(text)
     h = count_features(HUMAN_SAMPLES)
     a = count_features(AI_SAMPLES)
     print_compare(r, a, "你的文本", "AI基线")
     total, ai_total, human_total = sum(r.values()), sum(a.values()), sum(h.values())
-    print(f"\n参考系：内置人类样本合计 {human_total:.2f}，内置 AI 样本合计 {ai_total:.2f}，你的文本 {total:.2f}。")
+    print(f"\n参考系（注意：两条基线均为刻意构造的演示样本）：")
+    print(f"  内置人类样本合计 {human_total:.2f}，内置 AI 样本合计 {ai_total:.2f}，你的文本 {total:.2f}。")
     print("再次提醒：频率对比工具，不是判决书。")
 
 
@@ -258,14 +265,15 @@ def cmd_vs():
       "给我 5 句关于咖啡的候选开场白，并标出你觉得每句
        被选中的概率。"
 
-对比两轮的 5 句话：
-  · 第一轮通常高度雷同，且大概率出现"不是……而是……"或
-    "不仅仅是一杯咖啡"这类模板——这就是模式坍缩；
-  · 第二轮的 5 句往往明显更多样。
+对比两轮的 5 句话，观察两点：
+  · 两轮内部的相似程度，是否不同；
+  · "不仅仅是一杯咖啡"这类模板出现的频率，是否不同。
 
-原理：对齐训练把模型压向"最典型的那一个答案"；
-让它口头报出整个候选分布，等于绕开"只挑最稳妥"的那层压力。
-出处：Verbalized Sampling（arXiv:2510.01171），论文实测多样性提升 1.6–2.1 倍。
+注意：这个单人小演示只能用来观察两轮结果是否不同，
+不能识别原因，也不是论文实验的复现。
+出处：Verbalized Sampling（arXiv:2510.01171）——群体实验在创意写作
+任务上测得多样性提升 1.6–2.1 倍；论文作者的解释是模型仍保留了
+一部分默认回答之外的分布，这个解释无法用单人演示验证。
 """)
 
 
@@ -273,27 +281,21 @@ def cmd_vs():
 # 六、实验四：对齐前后对照（需要 transformers + torch，CPU 可跑）
 # ---------------------------------------------------------------------------
 
-PROBE_PROMPTS = [
-    "用两三句话说说远程办公的利弊。",
-    "为什么天空是蓝色的？用两三句话解释。",
-    "谈谈你对咖啡的看法，两三句话。",
-    "用两三句话介绍一下跑步的好处。",
-    "为什么人需要睡眠？简短回答。",
-    "用两三句话评价短视频。",
-    "读纸质书和电子书有什么区别？简短说。",
-    "用两三句话说说人工智能会不会取代程序员。",
+# 每题一个提问；部分题附带一个"……不是X，"前缀，用于测"而是"的接续概率
+PROBE_QA = [
+    ("用两三句话说说远程办公的利弊。", "远程办公的价值不是省下通勤时间，"),
+    ("谈谈读书的意义，两三句话。", "读书的意义不是记住多少内容，"),
+    ("用两三句话介绍一下跑步的好处。", "跑步最大的好处不是减肥，"),
+    ("用两三句话评价一家你喜欢的餐馆。", "这家店真正吸引人的不是味道，"),
+    ("为什么天空是蓝色的？用两三句话解释。", None),
+    ("谈谈你对咖啡的看法，两三句话。", None),
+    ("为什么人需要睡眠？简短回答。", None),
+    ("用两三句话评价短视频。", None),
 ]
 
 TEMPLATE_RE = re.compile(
     r"(不是[^。！？\n]{1,24}?而是|不仅仅?是|不只是[^。！？\n]{1,24}?更是|远不止|重新定义|本质上|归根结底)"
 )
-
-NEG_PREFIXES = [
-    "远程办公的价值不是省下通勤时间，",
-    "读书的意义不是记住多少内容，",
-    "跑步最大的好处不是减肥，",
-    "这家店真正吸引人的不是味道，",
-]
 
 
 def distinct_n(texts, n=2):
@@ -306,16 +308,19 @@ def distinct_n(texts, n=2):
     return len(grams) / max(total, 1)
 
 
-def cmd_probe(base_name, inst_name, n_samples, dry):
-    print("\n== 实验四：对齐前后对照 ==")
+def cmd_probe(base_name, inst_name, n_samples, seed, dry):
+    print("\n== 实验四：对齐前后对照（探索性演示） ==")
     print(f"基座模型：{base_name}")
     print(f"对齐模型：{inst_name}")
-    print(f"每题采样：{n_samples} 次，温度 0.9")
+    print(f"每题采样：{n_samples} 次，温度 0.9，随机种子 {seed}")
     if dry:
         print("\n--dry 模式：只展示实验设计，不加载模型。")
-        print("指标：①模板命中率（TEMPLATE_RE） ②distinct-2 多样性")
-        print("      ③开头四字去重率 ④'……不是X，'之后接'而是'的概率")
-        print("预期：对齐模型 ①↑ ②↓ ③↓ ④↑ —— 分布收窄的四个侧面。")
+        print("指标（均按题内计算后跨题平均，避免题目间天然差异干扰）：")
+        print("  ①模板命中率 ②字符二元组多样性（distinct-2）")
+        print("  ③开头四字去重率 ④'……不是X，'之后接'而是'的概率（对齐版走聊天模板）")
+        print("预期方向：对齐模型 ①↑ ②↓ ③↓ ④↑。")
+        print("边界：基座与对齐之间叠加 SFT、偏好优化、聊天模板等多重差异，")
+        print("本脚本不能单独证明坍缩发生在偏好优化（RL）阶段。")
         return
     try:
         import torch
@@ -323,8 +328,10 @@ def cmd_probe(base_name, inst_name, n_samples, dry):
     except ImportError:
         print("\n需要先安装依赖（约 1GB 下载 + 两个 0.5B 模型权重）：")
         print("    pip install transformers torch")
-        print("装不动也没关系：实验一/二/三零依赖，结论方向一致。")
+        print("装不动也没关系：实验一/二/三零依赖，照样能玩。")
         sys.exit(1)
+
+    torch.manual_seed(seed)
 
     def load(name):
         tok = AutoTokenizer.from_pretrained(name)
@@ -332,13 +339,20 @@ def cmd_probe(base_name, inst_name, n_samples, dry):
         model.eval()
         return tok, model
 
-    def generate(tok, model, prompt, chat):
+    def build_ids(tok, question, chat, prefix=""):
+        import torch as _t
         if chat and getattr(tok, "chat_template", None):
             ids = tok.apply_chat_template(
-                [{"role": "user", "content": prompt}],
+                [{"role": "user", "content": question}],
                 add_generation_prompt=True, return_tensors="pt")
-        else:
-            ids = tok(f"问题：{prompt}\n回答：", return_tensors="pt").input_ids
+            if prefix:
+                pre = tok(prefix, add_special_tokens=False, return_tensors="pt").input_ids
+                ids = _t.cat([ids, pre], dim=1)
+            return ids
+        return tok(f"问题：{question}\n回答：{prefix}", return_tensors="pt").input_ids
+
+    def generate(tok, model, question, chat):
+        ids = build_ids(tok, question, chat)
         with torch.no_grad():
             out = model.generate(
                 ids, attention_mask=torch.ones_like(ids),
@@ -346,9 +360,9 @@ def cmd_probe(base_name, inst_name, n_samples, dry):
                 max_new_tokens=80, pad_token_id=tok.eos_token_id)
         return tok.decode(out[0][ids.shape[1]:], skip_special_tokens=True)
 
-    def next_prob(tok, model, prefix, target="而是"):
-        ids = tok(prefix, return_tensors="pt").input_ids
-        tgt = tok(target, add_special_tokens=False).input_ids
+    def next_prob(tok, model, question, prefix, chat):
+        ids = build_ids(tok, question, chat, prefix)
+        tgt = tok("而是", add_special_tokens=False).input_ids
         p = 1.0
         with torch.no_grad():
             for t in tgt:
@@ -357,31 +371,39 @@ def cmd_probe(base_name, inst_name, n_samples, dry):
                 ids = torch.cat([ids, torch.tensor([[t]])], dim=1)
         return p
 
-    results = {}
+    results, raw = {}, {}
     for label, name, chat in [("基座", base_name, False), ("对齐", inst_name, True)]:
         print(f"\n加载 {label} 模型 {name} …（首次运行会下载权重）")
         tok, model = load(name)
-        outs = []
-        for q in PROBE_PROMPTS:
-            for _ in range(n_samples):
-                outs.append(generate(tok, model, q, chat))
-        hit = sum(1 for o in outs if TEMPLATE_RE.search(o)) / len(outs)
-        d2 = distinct_n(outs, 2)
-        heads = len({re.sub(r"\s", "", o)[:4] for o in outs}) / len(outs)
-        probs = [next_prob(tok, model, p) for p in NEG_PREFIXES]
-        results[label] = (hit, d2, heads, sum(probs) / len(probs))
+        hits, d2s, heads, probs = [], [], [], []
+        raw[label] = {}
+        for q, prefix in PROBE_QA:
+            outs = [generate(tok, model, q, chat) for _ in range(n_samples)]
+            raw[label][q] = outs
+            hits.append(sum(1 for o in outs if TEMPLATE_RE.search(o)) / len(outs))
+            d2s.append(distinct_n(outs, 2))
+            heads.append(len({re.sub(r"\s", "", o)[:4] for o in outs}) / len(outs))
+            if prefix:
+                probs.append(next_prob(tok, model, q, prefix, chat))
+        avg = lambda xs: sum(xs) / max(len(xs), 1)
+        results[label] = (avg(hits), avg(d2s), avg(heads), avg(probs))
         del model
 
-    print("\n结果对比：")
-    print(f"{'指标':<26}{'基座':>10}{'对齐':>10}")
-    rows = [("模板命中率（越高越AI味）", 0), ("distinct-2 多样性（越低越坍缩）", 1),
-            ("开头四字去重率（越低越同质）", 2), ("'不是X，'后接'而是'概率", 3)]
-    for name, i in rows:
-        print(f"{name:<26}{results['基座'][i]:>10.3f}{results['对齐'][i]:>10.3f}")
-    print("\n解读边界：基座 vs 对齐的差异是 SFT+偏好优化的整体效应；")
-    print("要把账单精确算到 RL 头上，需要 SFT-only 与 DPO 两个检查点对照")
-    print("（进阶：HuggingFaceH4/mistral-7b-sft-beta vs zephyr-7b-beta）。")
+    with open("probe_outputs.json", "w", encoding="utf-8") as f:
+        json.dump({"base": base_name, "instruct": inst_name, "seed": seed,
+                   "n_per_question": n_samples, "outputs": raw}, f,
+                  ensure_ascii=False, indent=1)
 
+    print("\n结果对比（各指标按题内计算后跨题平均）：")
+    print(f"{'指标':<30}{'基座':>9}{'对齐':>9}")
+    rows = [("模板命中率（越高越AI味）", 0), ("字符二元组多样性（越低越收窄）", 1),
+            ("开头四字去重率（越低越同质）", 2), ("'不是X，'后接'而是'概率", 3)]
+    for name_, i in rows:
+        print(f"{name_:<30}{results['基座'][i]:>9.3f}{results['对齐'][i]:>9.3f}")
+    print("\n原始输出已存 probe_outputs.json（含模型名与种子，供复核）。")
+    print("解读边界：基座与对齐之间叠加 SFT、偏好优化、聊天模板等多重差异，")
+    print("本脚本是探索性演示，不能单独证明坍缩发生在偏好优化（RL）阶段；")
+    print("要细分归因，用 SFT-only 与 DPO 检查点对照（如 mistral-7b-sft-beta vs zephyr-7b-beta）。")
 
 # ---------------------------------------------------------------------------
 
@@ -389,18 +411,22 @@ def cmd_probe(base_name, inst_name, n_samples, dry):
 def main():
     ap = argparse.ArgumentParser(description="aiwei-lab：AI味实验室")
     sub = ap.add_subparsers(dest="cmd")
-    sub.add_parser("demo", help="实验一：内置语料指纹对比")
+    sub.add_parser("demo", help="实验一：内置语料模板密度对比")
     p_scan = sub.add_parser("scan", help="实验一：扫描你自己的文本")
     p_scan.add_argument("path")
     p_quiz = sub.add_parser("quiz", help="实验二：你也是奖励模型")
     p_quiz.add_argument("--auto", action="store_true", help="随机作答（用于测试）")
     sub.add_parser("vs", help="实验三：口述采样（零代码说明）")
-    p_probe = sub.add_parser("probe", help="实验四：对齐前后对照")
+    p_probe = sub.add_parser("probe", help="实验四：对齐前后对照（探索性）")
     p_probe.add_argument("--base", default="Qwen/Qwen2.5-0.5B")
     p_probe.add_argument("--inst", default="Qwen/Qwen2.5-0.5B-Instruct")
-    p_probe.add_argument("-n", type=int, default=12, help="每题采样次数")
+    p_probe.add_argument("-n", type=int, default=12, help="每题采样次数（≥1）")
+    p_probe.add_argument("--seed", type=int, default=42, help="随机种子")
     p_probe.add_argument("--dry", action="store_true", help="只看实验设计，不加载模型")
     args = ap.parse_args()
+
+    if args.cmd == "probe" and args.n < 1:
+        ap.error("-n 必须 ≥ 1")
 
     if args.cmd == "demo":
         cmd_demo()
@@ -411,7 +437,7 @@ def main():
     elif args.cmd == "vs":
         cmd_vs()
     elif args.cmd == "probe":
-        cmd_probe(args.base, args.inst, args.n, args.dry)
+        cmd_probe(args.base, args.inst, args.n, args.seed, args.dry)
     else:
         ap.print_help()
 
