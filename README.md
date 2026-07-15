@@ -1,5 +1,7 @@
 # aiwei-lab
 
+**[中文版 README →](README.zh-CN.md)** — the Chinese version carries the fullest notes on scope and limitations.
+
 Why does AI writing always sound like *"This isn't just X — it's Y"*?
 
 A single-file lab to test one explanation yourself: **part of the AI accent may be existing rhetoric further amplified by preference training.** Humans invented these cheap rhetorical templates; annotators tend to favor them (typicality bias); alignment may amplify them further; synthetic-data pipelines may pass them on.
